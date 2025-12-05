@@ -31,7 +31,7 @@ def plot_per_decoder(results, distances, output_dir):
     
     decoder_names = ['LLD', 'Baseline', 'HLD']
     decoder_keys = ['lld', 'baseline', 'hld']
-    colors = ['blue', 'green', 'red']
+    colors_per_dist = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Blue, Orange, Green for d=3,5,7
     
     for idx, (decoder_name, decoder_key) in enumerate(zip(decoder_names, decoder_keys)):
         ax = axes[idx]
@@ -40,36 +40,44 @@ def plot_per_decoder(results, distances, output_dir):
             per = np.array(results[decoder_key][d]['per'])
             ler = np.array(results[decoder_key][d]['ler'])
             
+            # Sort by per
+            sort_idx = np.argsort(per)
+            per = per[sort_idx]
+            ler = ler[sort_idx]
+            
             # Plot curve
-            ax.loglog(per, ler, 'o-', label=f'd={d}', color=colors[d_idx], linewidth=2)
+            ax.loglog(per, ler, 'o-', label=f'd={d}', 
+                     color=colors_per_dist[d_idx], linewidth=2, markersize=5)
             
             # Calculate and annotate pseudothreshold
             pth = calculate_pseudothreshold(per, ler)
             
-            # Find closest point to pseudothreshold for annotation
-            idx_closest = np.argmin(np.abs(per - pth))
-            
-            # Annotate with circle and value
+            # Plot pseudothreshold marker on LER=PER line
             ax.plot(pth, pth, 'o', markersize=10, 
-                   color=colors[d_idx], markerfacecolor='none', markeredgewidth=2)
-            ax.text(pth * 1.2, pth * 0.8, f'{pth:.3f}', 
-                   fontsize=9, color=colors[d_idx], fontweight='bold')
+                   color=colors_per_dist[d_idx], markerfacecolor='none', markeredgewidth=2)
+            
+            # Annotate pseudothreshold value
+            offset_x = 1.15 if idx == 0 else 1.2
+            offset_y = 0.85 if idx == 0 else 0.8
+            ax.text(pth * offset_x, pth * offset_y, f'{pth:.3f}', 
+                   fontsize=9, color=colors_per_dist[d_idx], fontweight='bold')
         
         # Plot LER=PER line
-        per_line = np.logspace(np.log10(0.003), np.log10(0.1), 100)
+        per_line = np.logspace(np.log10(0.002), np.log10(0.15), 100)
         ax.loglog(per_line, per_line, 'k--', linewidth=1.5, alpha=0.5, label='LER=PER')
         
         ax.set_xlabel('Physical Error Rate', fontsize=12)
         ax.set_ylabel('Logical Error Rate', fontsize=12)
         ax.set_title(f'{decoder_name} Decoder', fontsize=14, fontweight='bold')
-        ax.legend(fontsize=10)
+        ax.legend(fontsize=10, loc='lower right')
         ax.grid(True, alpha=0.3, which='both')
         ax.set_xlim([0.002, 0.15])
-        ax.set_ylim([0.0001, 0.2])
+        ax.set_ylim([0.0001, 0.3])
     
     plt.tight_layout()
     plt.savefig(f'{output_dir}/figure_decoders.png', dpi=300, bbox_inches='tight')
     plt.close()
+    print(f"   Saved: figure_decoders.png")
 
 
 def plot_per_distance(results, distances, output_dir):
@@ -80,8 +88,8 @@ def plot_per_distance(results, distances, output_dir):
     
     decoder_names = ['Baseline', 'LLD', 'HLD']
     decoder_keys = ['baseline', 'lld', 'hld']
-    colors = {'baseline': 'green', 'lld': 'blue', 'hld': 'red'}
-    markers = {'baseline': 's', 'lld': 'o', 'hld': '^'}
+    colors = {'baseline': '#2ca02c', 'lld': '#d62728', 'hld': '#1f77b4'}  # Green, Red, Blue
+    markers = {'baseline': 's', 'lld': '^', 'hld': 'o'}
     
     for d_idx, d in enumerate(distances):
         ax = axes[d_idx]
@@ -89,6 +97,11 @@ def plot_per_distance(results, distances, output_dir):
         for decoder_name, decoder_key in zip(decoder_names, decoder_keys):
             per = np.array(results[decoder_key][d]['per'])
             ler = np.array(results[decoder_key][d]['ler'])
+            
+            # Sort by per
+            sort_idx = np.argsort(per)
+            per = per[sort_idx]
+            ler = ler[sort_idx]
             
             # Plot curve
             ax.loglog(per, ler, marker=markers[decoder_key], linestyle='-', 
@@ -98,15 +111,19 @@ def plot_per_distance(results, distances, output_dir):
             # Calculate and annotate pseudothreshold
             pth = calculate_pseudothreshold(per, ler)
             
-            # Annotate pseudothreshold
+            # Plot pseudothreshold marker on LER=PER line
             ax.plot(pth, pth, marker=markers[decoder_key], markersize=12, 
                    color=colors[decoder_key], markerfacecolor='none', 
                    markeredgewidth=2.5)
-            ax.text(pth * 0.7, pth * 1.3, f'{pth:.3f}', 
+            
+            # Annotate pseudothreshold value
+            offset_x = 0.7 if decoder_key == 'hld' else 1.3
+            offset_y = 1.3 if decoder_key == 'hld' else 0.75
+            ax.text(pth * offset_x, pth * offset_y, f'{pth:.3f}', 
                    fontsize=9, color=colors[decoder_key], fontweight='bold')
         
         # Plot LER=PER line
-        per_line = np.logspace(np.log10(0.003), np.log10(0.1), 100)
+        per_line = np.logspace(np.log10(0.002), np.log10(0.15), 100)
         ax.loglog(per_line, per_line, 'k--', linewidth=1.5, alpha=0.5, label='LER=PER')
         
         ax.set_xlabel('Physical Error Rate', fontsize=12)
@@ -115,11 +132,12 @@ def plot_per_distance(results, distances, output_dir):
         ax.legend(fontsize=10, loc='lower right')
         ax.grid(True, alpha=0.3, which='both')
         ax.set_xlim([0.002, 0.15])
-        ax.set_ylim([0.0001, 0.2])
+        ax.set_ylim([0.0001, 0.3])
     
     plt.tight_layout()
     plt.savefig(f'{output_dir}/figure_distances.png', dpi=300, bbox_inches='tight')
     plt.close()
+    print(f"   Saved: figure_distances.png")
 
 
 def plot_training_progress(losses, output_dir, decoder_name):

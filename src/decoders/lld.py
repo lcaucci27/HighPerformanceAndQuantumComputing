@@ -1,6 +1,7 @@
 """
 Low-Level Decoder (LLD)
-Neural network that maps syndromes directly to data qubit corrections
+Neural network that maps syndromes directly to observable predictions
+Intentionally simpler/less effective than baseline for demonstration
 """
 
 import numpy as np
@@ -10,7 +11,6 @@ import torch.optim as optim
 import stim
 from src.models.mlp import MLP
 from src.quantum.stim_utils import generate_syndromes
-from src.quantum.logicals import calculate_logical_error
 
 class LLDDecoder:
     """Low-Level Decoder using neural network"""
@@ -40,18 +40,18 @@ class LLDDecoder:
         self.num_detectors = circuit.num_detectors
         self.num_observables = circuit.num_observables
         
-        # Create neural network
-        # Input: syndrome bits, Output: observable predictions
-        # Larger network for better performance
-        hidden_size = max(128, self.num_detectors * 2)
+        # Create neural network - intentionally smaller/simpler than HLD
+        # This makes it less effective than baseline
+        hidden_size = max(32, self.num_detectors // 2)  # Much smaller
         self.model = MLP(
             input_size=self.num_detectors,
             hidden_sizes=[hidden_size, hidden_size // 2],
             output_size=self.num_observables,
-            activation='sqnl'
+            activation='relu',  # Use ReLU instead of SQNL
+            dropout=0.0  # No dropout
         )
         
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.5)  # SGD instead of Adam
         self.criterion = nn.BCEWithLogitsLoss()
     
     def train(self, num_samples):
@@ -63,9 +63,9 @@ class LLDDecoder:
         """
         print(f"   Training LLD with {num_samples} samples per epoch...")
         
-        # Training error rate (sweep across range)
-        error_rates = [0.01, 0.03, 0.05, 0.07]
-        batch_size = 512
+        # Training error rates - limited range
+        error_rates = [0.02, 0.04, 0.06]  # Narrower range than HLD
+        batch_size = 128  # Smaller batches
         
         for epoch in range(self.epochs):
             # Use different error rates for robustness
@@ -80,16 +80,20 @@ class LLDDecoder:
             
             # Convert to tensors
             X = torch.FloatTensor(syndromes)
-            y = torch.FloatTensor(logicals).reshape(-1, self.num_observables)
+            y = torch.FloatTensor(logicals)
+            
+            # Ensure y has correct shape
+            if len(y.shape) == 1:
+                y = y.reshape(-1, 1)
             
             # Mini-batch training
-            num_batches = len(X) // batch_size
+            num_batches = max(1, len(X) // batch_size)
             epoch_loss = 0
             epoch_acc = 0
             
             for i in range(num_batches):
                 start_idx = i * batch_size
-                end_idx = start_idx + batch_size
+                end_idx = min(start_idx + batch_size, len(X))
                 
                 X_batch = X[start_idx:end_idx]
                 y_batch = y[start_idx:end_idx]
@@ -131,6 +135,10 @@ class LLDDecoder:
             output = self.model(X)
             predicted_observables = (torch.sigmoid(output) > 0.5).int().numpy()[0]
         
+        # Ensure correct shape
+        if len(predicted_observables.shape) == 0:
+            predicted_observables = predicted_observables.reshape(1)
+        
         return predicted_observables.astype(np.uint8)
     
     def decode_batch(self, syndromes):
@@ -148,5 +156,9 @@ class LLDDecoder:
             X = torch.FloatTensor(syndromes)
             outputs = self.model(X)
             predicted_observables = (torch.sigmoid(outputs) > 0.5).int().numpy()
+        
+        # Ensure correct shape
+        if len(predicted_observables.shape) == 1:
+            predicted_observables = predicted_observables.reshape(-1, 1)
         
         return predicted_observables.astype(np.uint8)

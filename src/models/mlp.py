@@ -10,7 +10,7 @@ from src.models.activations import SQNL
 class MLP(nn.Module):
     """Multi-Layer Perceptron with 2 hidden layers"""
     
-    def __init__(self, input_size, hidden_sizes, output_size, activation='sqnl'):
+    def __init__(self, input_size, hidden_sizes, output_size, activation='sqnl', dropout=0.0):
         """
         Initialize MLP
         
@@ -19,6 +19,7 @@ class MLP(nn.Module):
             hidden_sizes: List of hidden layer sizes [h1, h2]
             output_size: Number of output features
             activation: Activation function ('sqnl', 'relu', 'tanh')
+            dropout: Dropout probability (0.0 = no dropout)
         """
         super(MLP, self).__init__()
         
@@ -44,6 +45,13 @@ class MLP(nn.Module):
             self.activation = nn.Tanh()
         else:
             raise ValueError(f"Unknown activation: {activation}")
+        
+        # Dropout layers
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else None
+        
+        # Batch normalization for better training
+        self.bn1 = nn.BatchNorm1d(h1)
+        self.bn2 = nn.BatchNorm1d(h2)
     
     def forward(self, x):
         """
@@ -57,11 +65,17 @@ class MLP(nn.Module):
         """
         # First hidden layer
         x = self.fc1(x)
+        x = self.bn1(x)
         x = self.activation(x)
+        if self.dropout is not None:
+            x = self.dropout(x)
         
         # Second hidden layer
         x = self.fc2(x)
+        x = self.bn2(x)
         x = self.activation(x)
+        if self.dropout is not None:
+            x = self.dropout(x)
         
         # Output layer (no activation, use with appropriate loss)
         x = self.fc3(x)

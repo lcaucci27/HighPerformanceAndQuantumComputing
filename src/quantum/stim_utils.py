@@ -18,7 +18,7 @@ def generate_syndromes(distance, error_rate, num_samples):
     Returns:
         syndromes: Binary array (num_samples, num_detectors)
         errors: Binary array (num_samples, num_data_qubits) 
-        logicals: Binary array (num_samples,) - actual logical observables
+        logicals: Binary array (num_samples, num_observables) - actual logical observables
     """
     
     # Generate surface code circuit with noise
@@ -45,14 +45,14 @@ def generate_syndromes(distance, error_rate, num_samples):
     syndromes = detection_events.astype(np.uint8)
     logicals = observable_flips.astype(np.uint8)
     
-    # Flatten logicals if needed
-    if len(logicals.shape) > 1:
-        logicals = logicals[:, 0]  # Take first observable
+    # Ensure logicals has correct shape (num_samples, num_observables)
+    if len(logicals.shape) == 1:
+        logicals = logicals.reshape(-1, 1)
     
-    # For errors, generate random errors matching the syndrome
-    # In practice, we don't need the exact errors, just whether there's a logical error
+    # For errors, we don't actually need them for our decoders
+    # But keep the interface consistent
     num_data_qubits = distance * distance
-    errors = (np.random.random((num_samples, num_data_qubits)) < error_rate).astype(np.uint8)
+    errors = np.zeros((num_samples, num_data_qubits), dtype=np.uint8)
     
     return syndromes, errors, logicals
 
