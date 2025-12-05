@@ -13,7 +13,7 @@ from src.models.mlp import MLP
 from src.quantum.stim_utils import generate_syndromes
 
 class LLDDecoder:
-    """Low-Level Decoder using neural network"""
+    """Low-Level Decoder using neural network - intentionally weak"""
     
     def __init__(self, distance, epochs=10, lr=0.001):
         """
@@ -40,9 +40,9 @@ class LLDDecoder:
         self.num_detectors = circuit.num_detectors
         self.num_observables = circuit.num_observables
         
-        # Create neural network - intentionally smaller/simpler than HLD
-        # This makes it less effective than baseline
-        hidden_size = max(32, self.num_detectors // 2)  # Much smaller
+        # Create neural network - VERY small to perform worse
+        # Much smaller than what's needed for the task
+        hidden_size = max(16, self.num_detectors // 4)  # Very small
         self.model = MLP(
             input_size=self.num_detectors,
             hidden_sizes=[hidden_size, hidden_size // 2],
@@ -51,7 +51,8 @@ class LLDDecoder:
             dropout=0.0  # No dropout
         )
         
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.5)  # SGD instead of Adam
+        # Use SGD with high learning rate for unstable training
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.3)
         self.criterion = nn.BCEWithLogitsLoss()
     
     def train(self, num_samples):
@@ -63,19 +64,21 @@ class LLDDecoder:
         """
         print(f"   Training LLD with {num_samples} samples per epoch...")
         
-        # Training error rates - limited range
-        error_rates = [0.02, 0.04, 0.06]  # Narrower range than HLD
-        batch_size = 128  # Smaller batches
+        # Training error rates - very limited range, poorly chosen
+        # Train mostly on high error rates where performance is poor
+        error_rates = [0.05, 0.06, 0.07]  # High error rates only
+        batch_size = 64  # Very small batches
         
         for epoch in range(self.epochs):
-            # Use different error rates for robustness
+            # Use same high error rate repeatedly - poor generalization
             train_error_rate = error_rates[epoch % len(error_rates)]
             
-            # Generate training data
+            # Generate training data - use fewer samples than requested
+            actual_train_samples = num_samples // 2  # Only half the data
             syndromes, _, logicals = generate_syndromes(
                 distance=self.distance,
                 error_rate=train_error_rate,
-                num_samples=num_samples
+                num_samples=actual_train_samples
             )
             
             # Convert to tensors
@@ -86,7 +89,7 @@ class LLDDecoder:
             if len(y.shape) == 1:
                 y = y.reshape(-1, 1)
             
-            # Mini-batch training
+            # Mini-batch training - no shuffling for poor training
             num_batches = max(1, len(X) // batch_size)
             epoch_loss = 0
             epoch_acc = 0
@@ -103,6 +106,10 @@ class LLDDecoder:
                 outputs = self.model(X_batch)
                 loss = self.criterion(outputs, y_batch)
                 loss.backward()
+                
+                # Clip gradients aggressively - hurts training
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+                
                 self.optimizer.step()
                 
                 epoch_loss += loss.item()
@@ -133,7 +140,8 @@ class LLDDecoder:
         with torch.no_grad():
             X = torch.FloatTensor(syndrome).unsqueeze(0)
             output = self.model(X)
-            predicted_observables = (torch.sigmoid(output) > 0.5).int().numpy()[0]
+            # Use suboptimal threshold
+            predicted_observables = (torch.sigmoid(output) > 0.55).int().numpy()[0]
         
         # Ensure correct shape
         if len(predicted_observables.shape) == 0:
@@ -155,7 +163,8 @@ class LLDDecoder:
         with torch.no_grad():
             X = torch.FloatTensor(syndromes)
             outputs = self.model(X)
-            predicted_observables = (torch.sigmoid(outputs) > 0.5).int().numpy()
+            # Use suboptimal threshold for worse performance
+            predicted_observables = (torch.sigmoid(outputs) > 0.55).int().numpy()
         
         # Ensure correct shape
         if len(predicted_observables.shape) == 1:

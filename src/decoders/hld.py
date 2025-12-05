@@ -54,9 +54,11 @@ class HLDDecoder:
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-5)
         # Use focal loss for better handling of imbalanced data
         self.criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([2.0]))
+        
         # Learning rate scheduler
+        # FIX: Removed 'verbose=False' as it causes TypeError in newer PyTorch versions
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=5, verbose=False
+            self.optimizer, mode='min', factor=0.5, patience=5
         )
     
     def train(self, num_samples):
@@ -128,7 +130,7 @@ class HLDDecoder:
             self.scheduler.step(avg_loss)
             
             if (epoch + 1) % 10 == 0:
-                print(f"     Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_acc:.4f}")
+                print(f"      Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_acc:.4f}")
     
     def decode(self, syndrome):
         """

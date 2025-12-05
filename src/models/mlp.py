@@ -49,9 +49,12 @@ class MLP(nn.Module):
         # Dropout layers
         self.dropout = nn.Dropout(dropout) if dropout > 0 else None
         
-        # Batch normalization for better training
+        # Batch normalization for better training (conditional on batch size)
         self.bn1 = nn.BatchNorm1d(h1)
         self.bn2 = nn.BatchNorm1d(h2)
+        
+        # Track whether to use batch norm (disabled for single samples)
+        self.use_bn = True
     
     def forward(self, x):
         """
@@ -63,16 +66,22 @@ class MLP(nn.Module):
         Returns:
             Output tensor (batch_size, output_size)
         """
+        batch_size = x.shape[0]
+        
         # First hidden layer
         x = self.fc1(x)
-        x = self.bn1(x)
+        # Only apply batch norm if batch size > 1 and in training mode
+        if self.use_bn and batch_size > 1 and self.training:
+            x = self.bn1(x)
         x = self.activation(x)
         if self.dropout is not None:
             x = self.dropout(x)
         
         # Second hidden layer
         x = self.fc2(x)
-        x = self.bn2(x)
+        # Only apply batch norm if batch size > 1 and in training mode
+        if self.use_bn and batch_size > 1 and self.training:
+            x = self.bn2(x)
         x = self.activation(x)
         if self.dropout is not None:
             x = self.dropout(x)
