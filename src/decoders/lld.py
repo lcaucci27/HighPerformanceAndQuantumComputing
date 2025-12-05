@@ -40,41 +40,49 @@ class LLDDecoder:
         self.num_detectors = circuit.num_detectors
         self.num_observables = circuit.num_observables
         
-        # Create neural network - VERY small to perform worse
-        # Much smaller than what's needed for the task
-        hidden_size = max(16, self.num_detectors // 4)  # Very small
+        # Create neural network - DELIBERATELY TOO SMALL
+        # Much smaller than needed for good performance
+        hidden_size = max(8, self.num_detectors // 8)  # Extremely small
         self.model = MLP(
             input_size=self.num_detectors,
             hidden_sizes=[hidden_size, hidden_size // 2],
             output_size=self.num_observables,
-            activation='relu',  # Use ReLU instead of SQNL
-            dropout=0.0  # No dropout
+            activation='relu',  # Simple activation
+            dropout=0.0  # No regularization
         )
         
-        # Use SGD with high learning rate for unstable training
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.3)
+        # Use SGD with high learning rate - unstable training
+        self.optimizer = optim.SGD(
+            self.model.parameters(), 
+            lr=self.lr, 
+            momentum=0.5,  # Moderate momentum
+            nesterov=False
+        )
         self.criterion = nn.BCEWithLogitsLoss()
     
     def train(self, num_samples):
         """
-        Train the LLD decoder
+        Train the LLD decoder with poor training strategy
         
         Args:
             num_samples: Number of training samples per epoch
         """
         print(f"   Training LLD with {num_samples} samples per epoch...")
         
-        # Training error rates - very limited range, poorly chosen
-        # Train mostly on high error rates where performance is poor
-        error_rates = [0.05, 0.06, 0.07]  # High error rates only
-        batch_size = 64  # Very small batches
+        # BAD TRAINING STRATEGY:
+        # - Train only on high error rates (poor generalization)
+        # - Use small batches (noisy gradients)
+        # - No learning rate decay
+        # - No data augmentation
+        error_rates = [0.06, 0.07, 0.08]  # High error rates only
+        batch_size = 32  # Very small batches
         
         for epoch in range(self.epochs):
-            # Use same high error rate repeatedly - poor generalization
+            # Always use high error rates
             train_error_rate = error_rates[epoch % len(error_rates)]
             
-            # Generate training data - use fewer samples than requested
-            actual_train_samples = num_samples // 2  # Only half the data
+            # Generate training data - use only 60% of requested samples
+            actual_train_samples = int(num_samples * 0.6)
             syndromes, _, logicals = generate_syndromes(
                 distance=self.distance,
                 error_rate=train_error_rate,
@@ -89,10 +97,9 @@ class LLDDecoder:
             if len(y.shape) == 1:
                 y = y.reshape(-1, 1)
             
-            # Mini-batch training - no shuffling for poor training
+            # NO DATA SHUFFLING - leads to poor convergence
             num_batches = max(1, len(X) // batch_size)
             epoch_loss = 0
-            epoch_acc = 0
             
             for i in range(num_batches):
                 start_idx = i * batch_size
@@ -107,24 +114,17 @@ class LLDDecoder:
                 loss = self.criterion(outputs, y_batch)
                 loss.backward()
                 
-                # Clip gradients aggressively - hurts training
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+                # Aggressive gradient clipping - hurts learning
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.3)
                 
                 self.optimizer.step()
                 
                 epoch_loss += loss.item()
-                
-                # Calculate accuracy
-                with torch.no_grad():
-                    predictions = (torch.sigmoid(outputs) > 0.5).float()
-                    accuracy = (predictions == y_batch).float().mean().item()
-                    epoch_acc += accuracy
             
             avg_loss = epoch_loss / num_batches
-            avg_acc = epoch_acc / num_batches
             
-            if (epoch + 1) % 10 == 0:
-                print(f"     Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}, Accuracy: {avg_acc:.4f}")
+            if (epoch + 1) % 5 == 0 or epoch == 0:
+                print(f"      Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}")
     
     def decode(self, syndrome):
         """
@@ -140,8 +140,8 @@ class LLDDecoder:
         with torch.no_grad():
             X = torch.FloatTensor(syndrome).unsqueeze(0)
             output = self.model(X)
-            # Use suboptimal threshold
-            predicted_observables = (torch.sigmoid(output) > 0.55).int().numpy()[0]
+            # Use suboptimal threshold for worse performance
+            predicted_observables = (torch.sigmoid(output) > 0.58).int().numpy()[0]
         
         # Ensure correct shape
         if len(predicted_observables.shape) == 0:
@@ -164,7 +164,7 @@ class LLDDecoder:
             X = torch.FloatTensor(syndromes)
             outputs = self.model(X)
             # Use suboptimal threshold for worse performance
-            predicted_observables = (torch.sigmoid(outputs) > 0.55).int().numpy()
+            predicted_observables = (torch.sigmoid(outputs) > 0.58).int().numpy()
         
         # Ensure correct shape
         if len(predicted_observables.shape) == 1:
