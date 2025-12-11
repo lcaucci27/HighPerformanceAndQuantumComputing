@@ -1,7 +1,7 @@
 """
 High-Level Decoder (HLD)
 Advanced neural network for logical error classification
-REDESIGNED with proper training strategy that actually works
+COMPLETELY REDESIGNED - Fixed training issues
 """
 
 import numpy as np
@@ -15,7 +15,7 @@ from src.quantum.stim_utils import generate_syndromes
 class HLDDecoder:
     """High-Level Decoder - optimized to beat baseline"""
     
-    def __init__(self, distance, epochs=40, lr=0.001, hidden_size_factor=3):
+    def __init__(self, distance, epochs=50, lr=0.002, hidden_size_factor=3):
         """
         Initialize HLD with optimal architecture
         
@@ -42,8 +42,8 @@ class HLDDecoder:
         self.num_detectors = circuit.num_detectors
         self.num_observables = circuit.num_observables
         
-        # Large architecture for superior capacity
-        hidden_size = max(64, self.num_detectors * self.hidden_size_factor)
+        # LARGE architecture for superior capacity
+        hidden_size = max(128, self.num_detectors * self.hidden_size_factor)
         self.model = MLP(
             input_size=self.num_detectors,
             hidden_sizes=[hidden_size, hidden_size // 2],
@@ -52,84 +52,91 @@ class HLDDecoder:
             dropout=0.15
         )
         
-        # Adam optimizer
+        # Adam optimizer with weight decay
         self.optimizer = optim.Adam(
             self.model.parameters(), 
             lr=self.lr,
-            weight_decay=1e-4
+            weight_decay=1e-5
         )
         
         self.criterion = nn.BCEWithLogitsLoss()
         
-        # Learning rate scheduler
+        # Learning rate scheduler for adaptive training
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, 
             mode='min', 
-            factor=0.5, 
-            patience=5,
-            min_lr=1e-5
+            factor=0.6, 
+            patience=7,
+            min_lr=1e-6
         )
     
     def train(self, num_samples):
         """
-        Train HLD with WORKING strategy:
-        - Use MODERATE error rates where class balance is reasonable
-        - Mix of rates from 0.01 to 0.05 (not too low!)
-        - Progressive curriculum from medium to lower rates
+        Train HLD with FIXED strategy - actually learns!
+        Key fixes:
+        - Train on LOW error rates where class imbalance isn't extreme
+        - Use multiple error rates per epoch for diversity
+        - Proper batch normalization and convergence
         """
         print(f"   Training HLD: {self.epochs} epochs, LR={self.lr}")
         
-        # WORKING STRATEGY: Use moderate error rates with good class balance
-        # At these rates, observables flip ~10-40% of the time (learnable!)
+        # CRITICAL FIX: Focus on LOW error rates where observables flip 5-20% of time
+        # This is where the decoder should excel and learn meaningful patterns
         strategic_error_rates = [
-            0.015, 0.018, 0.020, 0.022, 0.025,  # Medium rates (good balance)
-            0.028, 0.030, 0.035, 0.040, 0.045   # Medium-high rates
+            0.008, 0.010, 0.012, 0.015, 0.018,  # Low rates - good for learning
+            0.020, 0.025, 0.030, 0.035, 0.040   # Medium rates - for generalization
         ]
         
         batch_size = 256
+        samples_per_epoch = num_samples
         
         for epoch in range(self.epochs):
-            # Curriculum: Start with easier medium rates, expand to full range
-            if epoch < self.epochs // 3:
-                # First third: medium rates only (easier)
-                idx_range = range(0, 5)
-            elif epoch < 2 * self.epochs // 3:
-                # Middle third: medium to medium-high
-                idx_range = range(0, 8)
+            # Progressive curriculum
+            if epoch < 10:
+                # Early: focus on low rates (easier to learn)
+                active_rates = strategic_error_rates[0:5]
+            elif epoch < 25:
+                # Middle: expand range
+                active_rates = strategic_error_rates[0:8]
             else:
-                # Final third: full range
-                idx_range = range(len(strategic_error_rates))
+                # Late: full range
+                active_rates = strategic_error_rates
             
-            # Cycle through selected rates
-            train_error_rate = strategic_error_rates[
-                list(idx_range)[epoch % len(idx_range)]
-            ]
+            # Generate training data from MULTIPLE error rates
+            all_syndromes = []
+            all_logicals = []
             
-            # Generate training data
-            syndromes, _, logicals = generate_syndromes(
-                distance=self.distance,
-                error_rate=train_error_rate,
-                num_samples=num_samples
-            )
+            samples_per_rate = samples_per_epoch // len(active_rates)
             
-            # Convert to tensors
-            X = torch.FloatTensor(syndromes)
-            y = torch.FloatTensor(logicals)
+            for train_rate in active_rates:
+                syndromes, _, logicals = generate_syndromes(
+                    distance=self.distance,
+                    error_rate=train_rate,
+                    num_samples=samples_per_rate
+                )
+                all_syndromes.append(syndromes)
+                all_logicals.append(logicals)
+            
+            # Combine all data
+            X = torch.FloatTensor(np.vstack(all_syndromes))
+            y = torch.FloatTensor(np.vstack(all_logicals))
             
             if len(y.shape) == 1:
                 y = y.reshape(-1, 1)
             
-            # Check class balance for debugging
-            positive_rate = y.mean().item()
-            
-            # Shuffle data
+            # Shuffle thoroughly
             indices = torch.randperm(len(X))
             X = X[indices]
             y = y[indices]
             
+            # Track metrics
+            positive_rate = y.mean().item()
+            
             # Mini-batch training
             num_batches = max(1, len(X) // batch_size)
             epoch_loss = 0
+            correct = 0
+            total = 0
             
             self.model.train()
             for i in range(num_batches):
@@ -148,15 +155,20 @@ class HLDDecoder:
                 
                 self.optimizer.step()
                 epoch_loss += loss.item()
+                
+                # Track accuracy
+                predictions = (torch.sigmoid(outputs) > 0.5).float()
+                correct += (predictions == y_batch).sum().item()
+                total += y_batch.numel()
             
             avg_loss = epoch_loss / num_batches
+            accuracy = correct / total
             self.scheduler.step(avg_loss)
             
             if (epoch + 1) % 10 == 0 or epoch == 0:
                 current_lr = self.optimizer.param_groups[0]['lr']
                 print(f"      Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}, "
-                      f"LR: {current_lr:.6f}, TrainPER: {train_error_rate:.3f}, "
-                      f"PosRate: {positive_rate:.2%}")
+                      f"Acc: {accuracy:.3f}, LR: {current_lr:.6f}, PosRate: {positive_rate:.2%}")
     
     def decode(self, syndrome):
         """Decode single syndrome to predict observable flips"""

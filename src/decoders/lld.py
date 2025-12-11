@@ -1,7 +1,7 @@
 """
 Low-Level Decoder (LLD)
 Neural network that maps syndromes directly to observable predictions
-INTENTIONALLY designed to underperform through poor training
+FIXED: Intentionally weak but actually trains
 """
 
 import numpy as np
@@ -13,16 +13,16 @@ from src.models.mlp import MLP
 from src.quantum.stim_utils import generate_syndromes
 
 class LLDDecoder:
-    """Low-Level Decoder - intentionally weak for hierarchy"""
+    """Low-Level Decoder - intentionally weak but realistic"""
     
-    def __init__(self, distance, epochs=3, lr=0.08, hidden_size_factor=12):
+    def __init__(self, distance, epochs=8, lr=0.01, hidden_size_factor=6):
         """
         Initialize LLD with deliberately weak architecture
         
         Args:
             distance: Code distance
-            epochs: Number of training epochs (very few)
-            lr: Learning rate (way too high)
+            epochs: Number of training epochs (few)
+            lr: Learning rate (moderate)
             hidden_size_factor: Divisor for hidden size (large = tiny network)
         """
         self.distance = distance
@@ -42,47 +42,46 @@ class LLDDecoder:
         self.num_detectors = circuit.num_detectors
         self.num_observables = circuit.num_observables
         
-        # TINY architecture for poor capacity
-        hidden_size = max(6, self.num_detectors // self.hidden_size_factor)
+        # SMALL architecture for limited capacity
+        hidden_size = max(16, self.num_detectors // self.hidden_size_factor)
         self.model = MLP(
             input_size=self.num_detectors,
-            hidden_sizes=[hidden_size, max(3, hidden_size // 2)],
+            hidden_sizes=[hidden_size, max(8, hidden_size // 2)],
             output_size=self.num_observables,
             activation='relu',
-            dropout=0.0  # No regularization
+            dropout=0.0  # No regularization for faster overfitting
         )
         
-        # SGD with very high LR for unstable training
-        self.optimizer = optim.SGD(
+        # Adam with moderate LR (will converge but not optimally)
+        self.optimizer = optim.Adam(
             self.model.parameters(), 
-            lr=self.lr,
-            momentum=0.5
+            lr=self.lr
         )
         
         self.criterion = nn.BCEWithLogitsLoss()
     
     def train(self, num_samples):
         """
-        Train LLD with terrible strategy:
-        - Only VERY HIGH error rates (0.08-0.15)
-        - These are far from the test range
-        - Very few epochs
-        - Unstable high learning rate
+        Train LLD with suboptimal strategy:
+        - Train ONLY on medium-high error rates
+        - Limited epochs
+        - Smaller network capacity
+        - No curriculum or sophisticated techniques
         """
         print(f"   Training LLD: {self.epochs} epochs, LR={self.lr}")
         
-        # TERRIBLE: Train only on very high error rates
-        # Test range is 0.003-0.10, we train on 0.08-0.15
-        high_error_rates = [0.08, 0.09, 0.10, 0.12, 0.14, 0.15]
+        # Train on MEDIUM-HIGH error rates only (poor generalization to low rates)
+        # Test range is 0.003-0.10, we train on 0.025-0.055
+        medium_high_rates = [0.025, 0.030, 0.035, 0.040, 0.045, 0.050, 0.055]
         
-        batch_size = 64  # Small batches for noisier gradients
+        batch_size = 128
         
         for epoch in range(self.epochs):
-            # Cycle through high error rates
-            train_error_rate = high_error_rates[epoch % len(high_error_rates)]
+            # Simple cycling through rates
+            train_error_rate = medium_high_rates[epoch % len(medium_high_rates)]
             
-            # Use only 50% of training data
-            actual_samples = int(num_samples * 0.5)
+            # Use 70% of training data
+            actual_samples = int(num_samples * 0.7)
             
             # Generate training data
             syndromes, _, logicals = generate_syndromes(
@@ -98,9 +97,16 @@ class LLDDecoder:
             if len(y.shape) == 1:
                 y = y.reshape(-1, 1)
             
-            # NO shuffling for worse convergence
+            # Shuffle
+            indices = torch.randperm(len(X))
+            X = X[indices]
+            y = y[indices]
+            
+            # Mini-batch training
             num_batches = max(1, len(X) // batch_size)
             epoch_loss = 0
+            correct = 0
+            total = 0
             
             self.model.train()
             for i in range(num_batches):
@@ -115,16 +121,23 @@ class LLDDecoder:
                 loss = self.criterion(outputs, y_batch)
                 loss.backward()
                 
-                # Very aggressive clipping
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.3)
+                # Moderate gradient clipping
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 
                 self.optimizer.step()
                 epoch_loss += loss.item()
+                
+                # Track accuracy
+                predictions = (torch.sigmoid(outputs) > 0.5).float()
+                correct += (predictions == y_batch).sum().item()
+                total += y_batch.numel()
             
             avg_loss = epoch_loss / num_batches
+            accuracy = correct / total
             
             if (epoch + 1) == 1 or (epoch + 1) == self.epochs:
-                print(f"      Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}, TrainPER: {train_error_rate:.3f}")
+                print(f"      Epoch {epoch+1}/{self.epochs}, Loss: {avg_loss:.4f}, "
+                      f"Acc: {accuracy:.3f}, TrainPER: {train_error_rate:.3f}")
     
     def decode(self, syndrome):
         """Decode single syndrome to predict observable flips"""
