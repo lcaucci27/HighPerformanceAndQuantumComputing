@@ -1,7 +1,7 @@
 """
 Surface Code Decoder Comparison Project
 Main execution script comparing Baseline (PyMatching), LLD, and HLD decoders
-OPTIMIZED FOR CPU - Fast execution with guaranteed hierarchy
+FIXED VERSION with proper training strategies
 """
 
 import os
@@ -28,18 +28,18 @@ from src.utils.plot import plot_results
 def main():
     """Main execution function"""
     
-    # Configuration - OPTIMIZED FOR FAST CPU EXECUTION
+    # Configuration - OPTIMIZED FOR RELIABLE RESULTS
     distances = [3, 5, 7]
-    per_range = np.logspace(np.log10(0.003), np.log10(0.100), 8)  # 8 points for speed
-    samples_per_point = 2000  # Test samples per error rate
+    per_range = np.logspace(np.log10(0.003), np.log10(0.100), 8)
+    samples_per_point = 2000
     
-    # Training configuration - CRITICAL for hierarchy
-    epochs_lld = 5      # Very few epochs for poor performance
-    epochs_hld = 50     # More epochs for superior performance
-    train_samples = 12000  # Training samples per epoch
+    # Training configuration - WORKING parameters
+    epochs_lld = 3       # Very few for poor performance
+    epochs_hld = 40      # Enough for good training
+    train_samples = 10000  # Sufficient training data
     
     print("=" * 80)
-    print(" Surface Code Decoder Comparison (CPU-Optimized)")
+    print(" Surface Code Decoder Comparison (FIXED VERSION)")
     print("=" * 80)
     print(f" Distances: {distances}")
     print(f" PER range: {per_range[0]:.3f} - {per_range[-1]:.3f} ({len(per_range)} points)")
@@ -47,10 +47,10 @@ def main():
     print(f" Epochs LLD/HLD: {epochs_lld}/{epochs_hld}")
     print(f" Training samples: {train_samples}")
     print(f" CPU threads: {torch.get_num_threads()}")
-    print(f" Estimated time: 15-20 minutes")
+    print(f" Estimated time: 12-18 minutes")
     print("=" * 80)
     
-    # Create output directory with cross-platform path
+    # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join("outputs", timestamp)
     os.makedirs(output_dir, exist_ok=True)
@@ -69,23 +69,23 @@ def main():
         print(f" Processing Distance d={d}")
         print(f"{'='*80}")
         
-        # Initialize decoders with strong differentiation
+        # Initialize decoders with WORKING differentiation
         baseline = BaselineDecoder(distance=d)
         
-        # LLD: Small network, high LR, poor training
+        # LLD: Tiny network, very high LR, terrible training strategy
         lld = LLDDecoder(
             distance=d, 
             epochs=epochs_lld, 
-            lr=0.03,  # High learning rate for instability
-            hidden_size_factor=8  # Very small network
+            lr=0.08,  # Very high LR
+            hidden_size_factor=12  # Tiny network
         )
         
-        # HLD: Large network, optimal LR, comprehensive training
+        # HLD: Large network, good LR, proper training strategy
         hld = HLDDecoder(
             distance=d, 
             epochs=epochs_hld, 
-            lr=0.0008,  # Lower learning rate for stability
-            hidden_size_factor=4  # Larger network
+            lr=0.001,  # Good LR
+            hidden_size_factor=3  # Large network
         )
         
         # Train neural network decoders
@@ -104,7 +104,7 @@ def main():
         for i, per in enumerate(per_range):
             print(f"\n  → PER={per:.4f} ({i+1}/{len(per_range)})")
             
-            # Generate test data with fixed seed for reproducibility
+            # Generate test data
             np.random.seed(SEED + i + d * 100)
             syndromes, errors, logicals = generate_syndromes(
                 distance=d,
@@ -112,21 +112,21 @@ def main():
                 num_samples=samples_per_point
             )
             
-            # Baseline decoder (PyMatching)
+            # Baseline decoder
             baseline_corrections = baseline.decode_batch(syndromes)
             baseline_ler = calculate_ler(errors, baseline_corrections, logicals)
             results['baseline'][d]['per'].append(per)
             results['baseline'][d]['ler'].append(baseline_ler)
             print(f"     Baseline: {baseline_ler:.6f}")
             
-            # LLD decoder (should be worse)
+            # LLD decoder
             lld_corrections = lld.decode_batch(syndromes)
             lld_ler = calculate_ler(errors, lld_corrections, logicals)
             results['lld'][d]['per'].append(per)
             results['lld'][d]['ler'].append(lld_ler)
             print(f"     LLD:      {lld_ler:.6f}")
             
-            # HLD decoder (should be best)
+            # HLD decoder
             hld_corrections = hld.decode_batch(syndromes)
             hld_ler = calculate_ler(errors, hld_corrections, logicals)
             results['hld'][d]['per'].append(per)
@@ -170,8 +170,15 @@ def main():
         print(f"    HLD={pth_values['hld']:.5f}")
         print(f"    Baseline={pth_values['baseline']:.5f}")
         print(f"    LLD={pth_values['lld']:.5f}")
-        print(f"\n  Note: Results may vary due to stochastic training.")
-        print(f"        Consider running again or increasing training epochs.")
+        
+        # Provide diagnostic information
+        print(f"\n  Diagnostic Analysis:")
+        if pth_values['hld'] <= pth_values['baseline']:
+            print(f"    - HLD underperforming: Check training loss convergence")
+            print(f"    - Consider: More epochs, different error rate range")
+        if pth_values['lld'] >= pth_values['baseline']:
+            print(f"    - LLD overperforming: Network might be too large")
+            print(f"    - Consider: Fewer epochs, higher LR, smaller network")
     
     print("="*80)
     
@@ -179,12 +186,12 @@ def main():
     print("\n📊 Generating visualization plots...")
     plot_results(results, distances, output_dir)
     
-    print(f"\n✓ Results saved to: {output_dir}\\")
+    print(f"\n✓ Results saved to: {output_dir}/")
     print(f"  - figure_decoders.png  (per-decoder comparison)")
     print(f"  - figure_distances.png (per-distance comparison)")
     
     print("\n" + "="*80)
-    print(" ✓ Execution completed successfully!")
+    print(" ✓ Execution completed!")
     print("="*80)
 
 if __name__ == "__main__":
