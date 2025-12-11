@@ -48,10 +48,11 @@ def main():
     print(f" Estimated time: 12-18 minutes")
     print("=" * 80)
     
-    # Create output directory
+    # Create output directory with specified path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = f"outputs/{timestamp}"
+    output_dir = f"C:\\Users\\caucc\\OneDrive\\Desktop\\cilardone\\HighPerformanceAndQuantumComputing\\outputs\\{timestamp}"
     os.makedirs(output_dir, exist_ok=True)
+    print(f"\n Output directory: {output_dir}")
     
     # Storage for results
     results = {
@@ -148,7 +149,7 @@ def main():
     print("\n Generating plots...")
     plot_results(results, distances, output_dir)
     
-    print(f"\n✓ Results saved to: {output_dir}/")
+    print(f"\n✓ Results saved to: {output_dir}\\")
     print(f"  - figure_decoders.png")
     print(f"  - figure_distances.png")
     
