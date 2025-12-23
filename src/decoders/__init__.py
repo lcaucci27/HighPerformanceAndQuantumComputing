@@ -1,3 +1,0 @@
-"""
-Decoders module
-"""
